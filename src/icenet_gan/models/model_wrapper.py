@@ -15,7 +15,9 @@ class LitUNet(pl.LightningModule):
     def __init__(self,
                  model: nn.Module,
                  criterion: callable,
-                 learning_rate: float):
+                 learning_rate: float,
+                 enable_leadtime_metrics: bool = True,
+                 ):
         """
         Construct a UNet LightningModule.
         Note that we keep hyperparameters separate from dataloaders to prevent data leakage at test time.
@@ -35,31 +37,26 @@ class LitUNet(pl.LightningModule):
             "val_accuracy": [],
         }
 
-        self.training_step_outputs = []
-        self.validation_step_outputs = []
-
-        # Overall accuracy
-        metrics = {
+        # Overall metrics
+        val_metrics = {
             "val_accuracy": IceNetAccuracy(leadtimes_to_evaluate=list(range(self.model.n_forecast_days))),
-            "val_sieerror": SIEError(leadtimes_to_evaluate=list(range(self.model.n_forecast_days)))
+            "val_sieerror": SIEError(leadtimes_to_evaluate=list(range(self.model.n_forecast_days))),
         }
-
-        # Accuracy over leadtime
-        for i in range(self.model.n_forecast_days):
-            metrics[f"val_accuracy_{i}"] = IceNetAccuracy(leadtimes_to_evaluate=[i])
-            metrics[f"val_sieerror_{i}"] = SIEError(leadtimes_to_evaluate=[i])
-        self.metrics = MetricCollection(metrics)
-
-        # Overall accuracy
         test_metrics = {
             "test_accuracy": IceNetAccuracy(leadtimes_to_evaluate=list(range(self.model.n_forecast_days))),
-            "test_sieerror": SIEError(leadtimes_to_evaluate=list(range(self.model.n_forecast_days)))
+            "test_sieerror": SIEError(leadtimes_to_evaluate=list(range(self.model.n_forecast_days))),
         }
 
-        # Accuracy over leadtime
-        for i in range(self.model.n_forecast_days):
-            test_metrics[f"test_accuracy_{i}"] = IceNetAccuracy(leadtimes_to_evaluate=[i])
-            test_metrics[f"test_sieerror_{i}"] = SIEError(leadtimes_to_evaluate=[i])
+        # Metrics across each leadtime
+        if enable_leadtime_metrics:
+            for i in range(self.model.n_forecast_days):
+                val_metrics[f"val_accuracy_{i}"] = IceNetAccuracy(leadtimes_to_evaluate=[i])
+                val_metrics[f"val_sieerror_{i}"] = SIEError(leadtimes_to_evaluate=[i])
+
+                test_metrics[f"test_accuracy_{i}"] = IceNetAccuracy(leadtimes_to_evaluate=[i])
+                test_metrics[f"test_sieerror_{i}"] = SIEError(leadtimes_to_evaluate=[i])
+
+        self.val_metrics = MetricCollection(val_metrics)
         self.test_metrics = MetricCollection(test_metrics)
 
         # Save input parameters to __init__ (hyperparams) when checkpointing.
@@ -89,12 +86,11 @@ class LitUNet(pl.LightningModule):
         outputs = self.model(x)
         # y_hat = torch.sigmoid(outputs)
 
-        # loss = loss_func(outputs, y, sample_weight)
         loss = self.criterion(outputs, y, sample_weight)
-        
-        self.training_step_outputs.append(loss)
 
-        # self.log("train_loss", loss, on_step=True, on_epoch=True, prog_bar=True, sync_dist=True)
+        # This logged result can be accessed later via `self.trainer.callback_metrics("train_loss")`
+        # Reference: https://github.com/Lightning-AI/pytorch-lightning/issues/13147#issuecomment-1138975446
+        self.log("train_loss", loss, on_step=False, on_epoch=True, prog_bar=True, sync_dist=False)
         return {"loss": loss}
 
 
@@ -106,15 +102,25 @@ class LitUNet(pl.LightningModule):
         # y_hat: (b, h, w, classes, n_forecast_days)
         y_hat = torch.sigmoid(outputs)
 
-        # loss = loss_func(outputs, y, sample_weight)
         loss = self.criterion(outputs, y, sample_weight)
-        self.validation_step_outputs.append(loss)
 
-        # self.log("val_loss", loss, on_step=False, on_epoch=True, prog_bar=True, sync_dist=True)  # epoch-level loss
+        self.val_metrics.update(y_hat.squeeze(dim=-2), y.squeeze(dim=-1), sample_weight.squeeze(dim=-1))
 
-        self.metrics.update(y_hat.squeeze(dim=-2), y.squeeze(dim=-1), sample_weight.squeeze(dim=-1))
-
+        self.log("val_loss", loss, on_step=False, on_epoch=True, prog_bar=True, sync_dist=True)  # epoch-level loss
         return {"val_loss", loss}
+
+
+    def test_step(self, batch):
+        x, y, sample_weight = batch
+        outputs = self.model(x)
+        y_hat = torch.sigmoid(outputs)
+
+        loss = self.criterion(outputs, y, sample_weight)
+
+        self.test_metrics.update(y_hat.squeeze(dim=-2), y.squeeze(dim=-1), sample_weight.squeeze(dim=-1))
+
+        self.log("test_loss", loss, on_step=False, on_epoch=True, prog_bar=True, sync_dist=True)  # epoch-level loss
+        return loss
 
 
     # def training_epoch_end(self, outputs):
@@ -134,10 +140,9 @@ class LitUNet(pl.LightningModule):
         Reference lightning v2.0.0 migration guide:
         https://github.com/Lightning-AI/pytorch-lightning/pull/16520
         """
-        epoch_average = torch.stack(self.training_step_outputs).mean()
-        self.log("train_loss", epoch_average)#, on_epoch=True, prog_bar=True, sync_dist=True)
-        self.training_step_outputs.clear()  # free memory
-        self.metrics_history["train_loss"].append(epoch_average.item())
+        # Reference: https://github.com/Lightning-AI/pytorch-lightning/issues/13147#issuecomment-1138975446
+        avg_train_loss = self.trainer.callback_metrics["train_loss"]
+        self.metrics_history["train_loss"].append(avg_train_loss.item())
 
 
     def on_validation_epoch_end(self):
@@ -145,28 +150,13 @@ class LitUNet(pl.LightningModule):
         Reference lightning v2.0.0 migration guide:
         https://github.com/Lightning-AI/pytorch-lightning/pull/16520
         """
-        epoch_average = torch.stack(self.validation_step_outputs).mean()
-        self.log("validation_loss", epoch_average)#, on_epoch=True, prog_bar=True, sync_dist=True)
-        self.validation_step_outputs.clear()  # free memory
-        self.log_dict(self.metrics.compute(), on_step=False, on_epoch=True, prog_bar=True, sync_dist=True)  # epoch-level metrics
-        print(self.metrics["val_accuracy"])
-        self.metrics.reset()
-        self.metrics_history["val_loss"].append(epoch_average.item())
+        avg_val_loss = self.trainer.callback_metrics["val_loss"]
+        self.metrics_history["val_loss"].append(avg_val_loss.item())
 
-
-    def test_step(self, batch):
-        x, y, sample_weight = batch
-        outputs = self.model(x)
-        y_hat = torch.sigmoid(outputs)
-
-        # loss = loss_func(outputs, y, sample_weight)
-        loss = self.criterion(outputs, y, sample_weight)
-
-        self.log("test_loss", loss, on_step=False, on_epoch=True, prog_bar=True, sync_dist=True)  # epoch-level loss
-
-        self.test_metrics.update(y_hat.squeeze(dim=-2), y.squeeze(dim=-1), sample_weight.squeeze(dim=-1))
-    
-        return loss
+        val_accuracy = self.val_metrics["val_accuracy"].compute()
+        self.metrics_history["val_accuracy"].append(val_accuracy.item())
+        self.log("val_accuracy", val_accuracy, on_epoch=True, prog_bar=True, sync_dist=True)
+        self.val_metrics.reset()
 
 
     def on_test_epoch_end(self):
