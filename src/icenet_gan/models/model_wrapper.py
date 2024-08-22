@@ -153,9 +153,10 @@ class LitUNet(pl.LightningModule):
         avg_val_loss = self.trainer.callback_metrics["val_loss"]
         self.metrics_history["val_loss"].append(avg_val_loss.item())
 
-        val_accuracy = self.val_metrics["val_accuracy"].compute()
-        self.metrics_history["val_accuracy"].append(val_accuracy.item())
-        self.log("val_accuracy", val_accuracy, on_epoch=True, prog_bar=True, sync_dist=True)
+        val_metrics = self.val_metrics.compute()
+        self.log_dict(val_metrics, on_step=False, on_epoch=True, prog_bar=True, sync_dist=True)  # epoch-level metrics
+
+        self.metrics_history["val_accuracy"].append(val_metrics["val_accuracy"].item())
         self.val_metrics.reset()
 
 
