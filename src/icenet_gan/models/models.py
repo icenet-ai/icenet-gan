@@ -148,3 +148,36 @@ class UNet(nn.Module):
             nn.Conv2d(in_channels, out_channels, kernel_size=2, padding="same"),
             nn.ReLU(inplace=True)
         )
+
+
+def unet_batchnorm(input_shape: object,
+                   loss: object,
+                #    metrics: object,
+                   learning_rate: float = 1e-4,
+                   custom_optimizer: object = None,
+                   filter_size: float = 3,
+                   n_filters_factor: float = 1,
+                   n_forecast_days: int = 1,
+                   legacy_rounding: bool = True) -> object:
+
+    # construct unet
+    model = UNet(
+        input_channels=input_shape[-1],
+        filter_size=filter_size,
+        n_filters_factor=n_filters_factor,
+        n_forecast_days=n_forecast_days,
+        legacy_rounding=legacy_rounding,
+    )
+
+    # criterion = WeightedBCEWithLogitsLoss(reduction="none")
+    # criterion = WeightedL1Loss(reduction="none")
+    # criterion = WeightedMSELoss(reduction="none")
+
+    # configure PyTorch Lightning module
+    lit_module = LitUNet(
+        model=model,
+        criterion=loss,
+        learning_rate=learning_rate
+    )
+
+    return lit_module
