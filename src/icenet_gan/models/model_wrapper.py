@@ -16,7 +16,7 @@ class LitUNet(pl.LightningModule):
                  model: nn.Module,
                  criterion: callable,
                  learning_rate: float,
-                 enable_leadtime_metrics: bool = True,
+                 enable_leadtime_metrics: bool = False,
                  ):
         """
         Construct a UNet LightningModule.
@@ -121,18 +121,6 @@ class LitUNet(pl.LightningModule):
 
         self.log("test_loss", loss, on_step=False, on_epoch=True, prog_bar=True, sync_dist=True)  # epoch-level loss
         return loss
-
-
-    # def training_epoch_end(self, outputs):
-    #     avg_train_loss = torch.stack([x["train_loss"] for x in outputs]).mean()
-    #     self.metrics_history["train_loss"].append(avg_train_loss.item())
-
-
-    # def validation_epoch_end(self, outputs):
-    #     avg_val_loss = torch.stack([x["val_loss"] for x in outputs]).mean()
-    #     avg_val_accuracy = torch.stack([x["val_accuracy"] for x in outputs]).mean()
-    #     self.metrics_history["val_loss"].append(avg_train_loss.item())
-    #     self.metrics_history["val_accuracy"].append(avg_train_accuracy.item())
 
 
     def on_train_epoch_end(self):
