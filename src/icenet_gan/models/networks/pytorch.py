@@ -12,6 +12,7 @@ from icenet.model.networks.base import BaseNetwork
 from lightning.pytorch.callbacks import ModelCheckpoint
 from lightning.pytorch.loggers import CSVLogger
 
+from ...lightning.checkpoints import ModelCheckpointOnImprovement
 
 class PytorchNetwork(BaseNetwork):
     def __init__(self,
@@ -84,16 +85,27 @@ class PytorchNetwork(BaseNetwork):
                                 # Note: Cannot use with automatic best checkpointing
         )
 
-        save_top_k = 1 if save else 0
+        # save_top_k = 1 if save else 0
 
-        checkpoint_callback = ModelCheckpoint(monitor="val_accuracy",
-                                              mode="max",
-                                              save_top_k=save_top_k,
-                                              dirpath=self.model_path,
-                                              )
+        if save:
+            checkpoint_filename = "checkpoint.{}.network_{}.{}.".format(
+                    self.run_name, self.dataset.identifier, self.seed) + \
+                    "{epoch:03d}"
 
-        logging.info("Saving model to: {}".format(self._model_path))
-        trainer.callbacks.append(checkpoint_callback)
+            checkpoint_callback = ModelCheckpointOnImprovement(monitor="val_accuracy",
+                                                mode=self._checkpoint_mode,
+                                                save_top_k=-1,
+                                                # every_n_epochs=1,
+                                                filename=checkpoint_filename,
+                                                # Prevents "epoch=001" in filename output
+                                                auto_insert_metric_name=False,
+                                                # dirpath=self._weights_path,
+                                                dirpath=self.network_folder,
+                                                save_weights_only=True,
+                                                )
+
+            logging.info("Saving model & network to: {}".format(self._weights_path))
+            trainer.callbacks.append(checkpoint_callback)
 
         # train model
         # print(f"Training {len(train_dataset)} examples / {len(train_dataloader)} batches (batch size {batch_size}).")
