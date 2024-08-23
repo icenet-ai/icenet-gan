@@ -36,7 +36,7 @@ changelog = "https://github.com/bnubald/icenet_gan/blob/master/changelog.md"
 homepage = "https://github.com/bnubald/icenet_gan"
 
 [project.scripts]
-icenetgan_train = "icenet_gan.icenet_gan:pytorch_main"
+icenetgan_train = "icenet_gan.models.train:pytorch_main"
 
 [tool.setuptools]
 package-dir = {"" = "src"}

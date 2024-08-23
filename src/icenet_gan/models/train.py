@@ -1,75 +1,183 @@
+import json
+import logging
+import time
+
 import lightning.pytorch as pl
 
-from icenet.data.dataset import IceNetDataSetPyTorch
-from lightning.pytorch.callbacks import ModelCheckpoint
-from torch.utils.data import DataLoader
+from icenet.model.cli import TrainingArgParser
 
+from ..data.data import IceNetDataSetTorch
+from .models import LitUNet, unet_batchnorm
 from .losses import WeightedMSELoss
-from .models import UNet
-from .model_wrapper import LitUNet
+from .networks.pytorch import PytorchNetwork
 
 
-def train_icenet(configuration_path,
-                 learning_rate,
-                 max_epochs,
-                 batch_size,
-                 n_workers,
-                 filter_size,
-                 n_filters_factor,
-                 seed):
-    """
-    Train IceNet using the arguments specified in the `args` namespace.
-    :param args: Namespace of configuration parameters
-    """
-    # init
-    pl.seed_everything(seed)
+def evaluate_model(trainer: object,
+                   model_path: object,
+                   dataset: object,
+                   dataset_ratio: float = 1.0):
+    logging.info("Running evaluation against test set")
 
-    persistent_workers = True
-    
-    # configure datasets and dataloaders
-    train_dataset = IceNetDataSetPyTorch(configuration_path, mode="train")
-    val_dataset = IceNetDataSetPyTorch(configuration_path, mode="val")
-    train_dataloader = DataLoader(train_dataset, batch_size=batch_size, num_workers=n_workers,
-                                  persistent_workers=persistent_workers, shuffle=False)
-    val_dataloader = DataLoader(val_dataset, batch_size=batch_size, num_workers=n_workers,
-                                persistent_workers=persistent_workers, shuffle=False)
+    # _, val_ds, test_ds = dataset.get_split_datasets(ratio=dataset_ratio)
+    _, validation_dataloader, test_dataloader = dataset.get_data_loaders(ratio=dataset_ratio)
+    eval_data = validation_dataloader
 
-    # construct unet
-    model = UNet(
-        input_channels=train_dataset._num_channels,
-        filter_size=filter_size,
-        n_filters_factor=n_filters_factor,
-        n_forecast_days=train_dataset._n_forecast_days
+    if dataset.counts["test"] > 0:
+        eval_data = test_dataloader
+        logging.info("Using test set for validation")
+    else:
+        logging.warning("Using validation data source for evaluation, rather "
+                        "than test set")
+
+    lead_times = list(range(1, dataset.n_forecast_days + 1))
+    logging.info("Metric creation for lead time of {} days".format(
+        len(lead_times)))
+    # # TODO: common across train_model and evaluate_model - list of instantiations
+    # metric_names = ["binacc", "mae", "rmse"]
+    # metrics_classes = [
+    #     metrics.WeightedBinaryAccuracy,
+    #     metrics.WeightedMAE,
+    #     metrics.WeightedRMSE,
+    # ]
+    # metrics_list = [
+    #     cls(leadtime_idx=lt - 1) for lt in lead_times
+    #     for cls in metrics_classes
+    # ]
+
+    # network.compile(weighted_metrics=metrics_list)
+
+    logging.info('Evaluating... ')
+    tic = time.time()
+
+    # Load the best result from the checkpoint
+    best_model = LitUNet.load_from_checkpoint(model_path)
+
+    # disable randomness, dropout, etc...
+    best_model.eval()
+
+    results = trainer.test(best_model, dataloaders=eval_data)
+    print(results)
+
+    # results = network.evaluate(
+    #     eval_data,
+    #     return_dict=True,
+    #     verbose=2
+    # )
+
+    results_path = "{}.results.json".format(model_path)
+    logging.info(f"Saving evaluation results to {results_path}")
+    with open(results_path, "w") as fh:
+        json.dump(results[0], fh)
+
+    logging.debug(results)
+    logging.info("Done in {:.1f}s".format(time.time() - tic))
+
+    return results
+    # return results, metric_names, lead_times
+
+
+def get_datasets_torch(args):
+    # TODO: this should come from a factory in the future - not the only place
+    #  that merged datasets are going to be available
+
+    dataset_filenames = [
+        el if str(el).split(".")[-1] == "json" else "dataset_config.{}.json".format(el)
+        for el in [args.dataset, *args.additional]
+    ]
+
+    # if len(args.additional) == 0:
+    #     dataset = IceNetDataSetPyTorch(dataset_filenames[0],
+    #                                     batch_size=args.batch_size,
+    #                                     shuffling=args.shuffle_train)
+    # else:
+    #     dataset = MergedIceNetDataSet(dataset_filenames,
+    #                                   batch_size=args.batch_size,
+    #                                   shuffling=args.shuffle_train)
+
+    dataset = IceNetDataSetTorch(dataset_filenames[0],
+                                batch_size=args.batch_size,
+                                shuffling=False
+                                )
+    return dataset
+
+
+def pytorch_main():
+    args = TrainingArgParser().add_unet().parse_args()
+    dataset = get_datasets_torch(args)
+    network = PytorchNetwork(dataset,
+                                args.run_name,
+                                checkpoint_mode=args.checkpoint_mode,
+                                checkpoint_monitor=args.checkpoint_monitor,
+                                early_stopping_patience=args.early_stopping,
+                                lr_decay=(
+                                    args.lr_10e_decay_fac,
+                                    args.lr_decay_start,
+                                    args.lr_decay_end,
+                                ),
+                                pre_load_path=args.preload,
+                                seed=args.seed,
+                                verbose=args.verbose)
+    execute_pytorch_training(args, dataset, network)
+
+
+def execute_pytorch_training(args, dataset, network,
+                        save=True,
+                        evaluate=True):
+    # There is a better way of doing this by passing off to a dynamic factory
+    # for other integrations, but for the moment I have no shame
+    using_wandb = False
+    run = None
+
+    # # TODO: move to overridden implementation - decorator?
+    # if not args.no_wandb:
+    #     from icenet.model.handlers.wandb import init_wandb, finalise_wandb
+    #     run, callback = init_wandb(args)
+
+    #     if callback is not None:
+    #         network.add_callback(callback)
+    #         using_wandb = True
+
+    input_shape = (*dataset.shape, dataset.num_channels)
+    ratio = args.ratio if args.ratio else 1.0
+    # Do not yet support ratio != 1.0 with pytorch
+    train_dataloader, validation_dataloader, _ = dataset.get_data_loaders(ratio=1.0)
+    # train_ds, val_ds, _ = dataset.get_split_datasets(ratio=ratio)
+
+    trainer, checkpoint_callback = network.train(
+        args.epochs,
+        unet_batchnorm,
+        train_dataloader,
+        model_creator_kwargs=dict(
+            input_shape=input_shape,
+            # loss=losses.WeightedMSE(),
+            loss=WeightedMSELoss(reduction="none"),
+            # metrics=[
+            #     metrics.WeightedBinaryAccuracy(),
+            #     metrics.WeightedMAE(),
+            #     metrics.WeightedRMSE(),
+            #     losses.WeightedMSE()
+            # ],
+            learning_rate=args.lr,
+            filter_size=args.filter_size,
+            n_filters_factor=args.n_filters_factor,
+            n_forecast_days=dataset.n_forecast_days,
+        ),
+        save=save,
+        validation_dataloader=validation_dataloader,
     )
 
-    # criterion = WeightedBCEWithLogitsLoss(reduction="none")
-    # criterion = WeightedL1Loss(reduction="none")
-    criterion = WeightedMSELoss(reduction="none")
-    
-    # configure PyTorch Lightning module
-    lit_module = LitUNet(
-        model=model,
-        criterion=criterion,
-        learning_rate=learning_rate
-    )
+    if evaluate:
+        best_checkpoint = checkpoint_callback.best_model_path
+        # results, metric_names, leads = \
+        #     evaluate_model(best_checkpoint,
+        #                    dataset,
+        #                    dataset_ratio=args.ratio)
+        results = evaluate_model(trainer,
+                       best_checkpoint,
+                       dataset,
+                       dataset_ratio=args.ratio
+                       )
 
-    # set up trainer configuration
-    trainer = pl.Trainer(
-        accelerator="auto",
-        devices=1,
-        log_every_n_steps=5,
-        max_epochs=max_epochs,
-        num_sanity_val_steps=1,
-        fast_dev_run=False, # Runs single batch through train and validation
-                            #    when running trainer.test()
-                            # Note: Cannot use with automatic best checkpointing
-    )
-    checkpoint_callback = ModelCheckpoint(monitor="val_accuracy", mode="max")
-    trainer.callbacks.append(checkpoint_callback)
+    #     if using_wandb:
+    #         finalise_wandb(run, results, metric_names, leads)
 
-    # train model
-    print(f"Training {len(train_dataset)} examples / {len(train_dataloader)} batches (batch size {batch_size}).")
-    print(f"Validating {len(val_dataset)} examples / {len(val_dataloader)} batches (batch size {batch_size}).")
-    trainer.fit(lit_module, train_dataloader, val_dataloader)
-
-    return model, trainer, checkpoint_callback

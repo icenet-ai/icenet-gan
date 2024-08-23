@@ -7,15 +7,11 @@ import pandas as pd
 import torch
 import torch.utils.data as data
 
-from icenet.data.dataset import IceNetDataSetPyTorch
-from icenet.model.cli import TrainingArgParser
+
 from icenet.model.networks.base import BaseNetwork
 from lightning.pytorch.callbacks import ModelCheckpoint
 from lightning.pytorch.loggers import CSVLogger
 
-from .data.data import IceNetDataSetTorch
-from .models.models import unet_batchnorm
-from .models.losses import WeightedMSELoss
 
 class PytorchNetwork(BaseNetwork):
     def __init__(self,
@@ -136,102 +132,4 @@ class PytorchNetwork(BaseNetwork):
         #     with open(history_path, 'w') as fh:
         #         pd.DataFrame(model_history.history).to_json(fh)
 
-
-def get_datasets(args):
-    # TODO: this should come from a factory in the future - not the only place
-    #  that merged datasets are going to be available
-
-    dataset_filenames = [
-        el if str(el).split(".")[-1] == "json" else "dataset_config.{}.json".format(el)
-        for el in [args.dataset, *args.additional]
-    ]
-
-    # if len(args.additional) == 0:
-    #     dataset = IceNetDataSetPyTorch(dataset_filenames[0],
-    #                                     batch_size=args.batch_size,
-    #                                     shuffling=args.shuffle_train)
-    # else:
-    #     dataset = MergedIceNetDataSet(dataset_filenames,
-    #                                   batch_size=args.batch_size,
-    #                                   shuffling=args.shuffle_train)
-
-    dataset = IceNetDataSetTorch(dataset_filenames[0],
-                                batch_size=args.batch_size,
-                                shuffling=False
-                                )
-    return dataset
-
-
-def pytorch_main():
-    args = TrainingArgParser().add_unet().parse_args()
-    dataset = get_datasets(args)
-    network = PytorchNetwork(dataset,
-                                args.run_name,
-                                checkpoint_mode=args.checkpoint_mode,
-                                checkpoint_monitor=args.checkpoint_monitor,
-                                early_stopping_patience=args.early_stopping,
-                                lr_decay=(
-                                    args.lr_10e_decay_fac,
-                                    args.lr_decay_start,
-                                    args.lr_decay_end,
-                                ),
-                                pre_load_path=args.preload,
-                                seed=args.seed,
-                                verbose=args.verbose)
-    execute_pytorch_training(args, dataset, network)
-
-
-def execute_pytorch_training(args, dataset, network,
-                        save=True,
-                        evaluate=True):
-    # There is a better way of doing this by passing off to a dynamic factory
-    # for other integrations, but for the moment I have no shame
-    using_wandb = False
-    run = None
-
-    # # TODO: move to overridden implementation - decorator?
-    # if not args.no_wandb:
-    #     from icenet.model.handlers.wandb import init_wandb, finalise_wandb
-    #     run, callback = init_wandb(args)
-
-    #     if callback is not None:
-    #         network.add_callback(callback)
-    #         using_wandb = True
-
-    input_shape = (*dataset.shape, dataset.num_channels)
-    ratio = args.ratio if args.ratio else 1.0
-    # Do not yet support ratio != 1.0 with pytorch
-    train_dataloader, validation_dataloader, _ = dataset.get_data_loaders(ratio=1.0)
-    # train_ds, val_ds, _ = dataset.get_split_datasets(ratio=ratio)
-
-    network.train(
-        args.epochs,
-        unet_batchnorm,
-        train_dataloader,
-        model_creator_kwargs=dict(
-            input_shape=input_shape,
-            # loss=losses.WeightedMSE(),
-            loss=WeightedMSELoss(reduction="none"),
-            # metrics=[
-            #     metrics.WeightedBinaryAccuracy(),
-            #     metrics.WeightedMAE(),
-            #     metrics.WeightedRMSE(),
-            #     losses.WeightedMSE()
-            # ],
-            learning_rate=args.lr,
-            filter_size=args.filter_size,
-            n_filters_factor=args.n_filters_factor,
-            n_forecast_days=dataset.n_forecast_days,
-        ),
-        save=save,
-        validation_dataloader=validation_dataloader,
-    )
-
-    # if evaluate:
-    #     results, metric_names, leads = \
-    #         evaluate_model(network.model_path,
-    #                        dataset,
-    #                        dataset_ratio=args.ratio)
-
-    #     if using_wandb:
-    #         finalise_wandb(run, results, metric_names, leads)
+        return trainer, checkpoint_callback
