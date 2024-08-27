@@ -14,7 +14,7 @@ class IceNetAccuracy(Metric):
     higher_is_better: bool = True
     full_state_update: bool = True
 
-    def __init__(self, leadtimes_to_evaluate: list):
+    def __init__(self, leadtimes_to_evaluate: list = None):
         """Custom loss/metric for binary accuracy in classifying SIC>15% for multiple leadtimes.
 
         Args:
@@ -24,7 +24,7 @@ class IceNetAccuracy(Metric):
                 e.g., [5] to only look at the sixth day's accuracy
         """
         super().__init__()
-        self.leadtimes_to_evaluate = leadtimes_to_evaluate
+        self.leadtimes_to_evaluate = leadtimes_to_evaluate if leadtimes_to_evaluate is not None else slice(None)
         self.add_state("weighted_score", default=torch.tensor(0.), dist_reduce_fx="sum")
         self.add_state("possible_score", default=torch.tensor(0.), dist_reduce_fx="sum")
 
@@ -50,7 +50,7 @@ class SIEError(Metric):
     higher_is_better: bool = False
     full_state_update: bool = True
 
-    def __init__(self, leadtimes_to_evaluate: list):
+    def __init__(self, leadtimes_to_evaluate: list = None):
         """Construct an SIE error metric (in km^2) for use at multiple leadtimes.
             leadtimes_to_evaluate: A list of leadtimes to consider
                 e.g., [0, 1, 2, 3, 4, 5] to consider six days in computation or
@@ -58,7 +58,7 @@ class SIEError(Metric):
                 e.g., [5] to only look at the sixth day
         """
         super().__init__()
-        self.leadtimes_to_evaluate = leadtimes_to_evaluate
+        self.leadtimes_to_evaluate = leadtimes_to_evaluate if leadtimes_to_evaluate is not None else slice(None)
         self.add_state("pred_sie", default=torch.tensor(0.), dist_reduce_fx="sum")
         self.add_state("true_sie", default=torch.tensor(0.), dist_reduce_fx="sum")
 

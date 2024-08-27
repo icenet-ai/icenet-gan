@@ -48,8 +48,6 @@ class UNet(nn.Module):
                     reduced_channels * 2 ** pow if not legacy_rounding else int(reduced_channels * 2 ** pow)
                 for pow in range(4)
             }
-        
-        print(input_channels)
 
         # Encoder
         self.conv1 = self.conv_block(input_channels, channels[64])
@@ -152,7 +150,7 @@ class UNet(nn.Module):
 
 def unet_batchnorm(input_shape: object,
                    loss: object,
-                #    metrics: object,
+                   metrics: object,
                    learning_rate: float = 1e-4,
                    custom_optimizer: object = None,
                    filter_size: float = 3,
@@ -177,7 +175,9 @@ def unet_batchnorm(input_shape: object,
     lit_module = LitUNet(
         model=model,
         criterion=loss,
-        learning_rate=learning_rate
+        learning_rate=learning_rate,
+        metrics=metrics,
+        enable_leadtime_metrics=True,
     )
 
     return lit_module

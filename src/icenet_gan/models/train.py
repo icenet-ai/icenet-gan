@@ -4,11 +4,12 @@ import time
 
 import lightning.pytorch as pl
 
-from icenet.model.cli import TrainingArgParser
+from .cli import TrainingArgParser
 
+from . import metrics
+from . import losses
 from ..data.data import IceNetDataSetTorch
 from .models import LitUNet, unet_batchnorm
-from .losses import WeightedMSELoss
 from .networks.pytorch import PytorchNetwork
 
 
@@ -108,12 +109,12 @@ def pytorch_main():
                                 args.run_name,
                                 checkpoint_mode=args.checkpoint_mode,
                                 checkpoint_monitor=args.checkpoint_monitor,
-                                early_stopping_patience=args.early_stopping,
-                                lr_decay=(
-                                    args.lr_10e_decay_fac,
-                                    args.lr_decay_start,
-                                    args.lr_decay_end,
-                                ),
+                                # early_stopping_patience=args.early_stopping,
+                                # lr_decay=(
+                                #     args.lr_10e_decay_fac,
+                                #     args.lr_decay_start,
+                                #     args.lr_decay_end,
+                                # ),
                                 pre_load_path=args.preload,
                                 seed=args.seed,
                                 verbose=args.verbose)
@@ -149,14 +150,14 @@ def execute_pytorch_training(args, dataset, network,
         train_dataloader,
         model_creator_kwargs=dict(
             input_shape=input_shape,
-            # loss=losses.WeightedMSE(),
-            loss=WeightedMSELoss(reduction="none"),
-            # metrics=[
-            #     metrics.WeightedBinaryAccuracy(),
-            #     metrics.WeightedMAE(),
-            #     metrics.WeightedRMSE(),
-            #     losses.WeightedMSE()
-            # ],
+            loss=losses.WeightedMSELoss(),
+            # Note, when using CLI, pass the metric method name prepended by 'val_'
+            # e.g. `--checkpoint-monitor val_icenetaccuracy`
+            metrics=[
+                metrics.IceNetAccuracy,
+                metrics.SIEError,
+                # losses.WeightedMSELoss,
+            ],
             learning_rate=args.lr,
             filter_size=args.filter_size,
             n_filters_factor=args.n_filters_factor,
@@ -180,4 +181,3 @@ def execute_pytorch_training(args, dataset, network,
 
     #     if using_wandb:
     #         finalise_wandb(run, results, metric_names, leads)
-

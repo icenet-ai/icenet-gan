@@ -85,14 +85,12 @@ class PytorchNetwork(BaseNetwork):
                                 # Note: Cannot use with automatic best checkpointing
         )
 
-        # save_top_k = 1 if save else 0
-
         if save:
             checkpoint_filename = "checkpoint.{}.network_{}.{}.".format(
                     self.run_name, self.dataset.identifier, self.seed) + \
                     "{epoch:03d}"
 
-            checkpoint_callback = ModelCheckpointOnImprovement(monitor="val_accuracy",
+            checkpoint_callback = ModelCheckpointOnImprovement(monitor=self._checkpoint_monitor,
                                                 mode=self._checkpoint_mode,
                                                 save_top_k=-1,
                                                 # every_n_epochs=1,

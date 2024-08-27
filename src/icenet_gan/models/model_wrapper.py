@@ -1,11 +1,11 @@
+from collections import defaultdict
+
 import torch
 import torch.nn as nn
 import lightning.pytorch as pl
 
 from lightning.pytorch.utilities.types import TRAIN_DATALOADERS
 from torchmetrics import MetricCollection
-
-from .metrics import IceNetAccuracy, SIEError
 
 
 class LitUNet(pl.LightningModule):
@@ -16,7 +16,8 @@ class LitUNet(pl.LightningModule):
                  model: nn.Module,
                  criterion: callable,
                  learning_rate: float,
-                 enable_leadtime_metrics: bool = False,
+                 metrics: object,
+                 enable_leadtime_metrics: bool = True,
                  ):
         """
         Construct a UNet LightningModule.
@@ -29,32 +30,34 @@ class LitUNet(pl.LightningModule):
         self.model = model
         self.criterion = criterion
         self.learning_rate = learning_rate
+        self.metrics = metrics
         self.n_output_classes = model.n_output_classes  # this should be a property of the network
 
-        self.metrics_history = {
-            "train_loss": [],
-            "val_loss": [],
-            "val_accuracy": [],
-        }
+        self.metrics_history = defaultdict(list)
 
-        # Overall metrics
-        val_metrics = {
-            "val_accuracy": IceNetAccuracy(leadtimes_to_evaluate=list(range(self.model.n_forecast_days))),
-            "val_sieerror": SIEError(leadtimes_to_evaluate=list(range(self.model.n_forecast_days))),
-        }
-        test_metrics = {
-            "test_accuracy": IceNetAccuracy(leadtimes_to_evaluate=list(range(self.model.n_forecast_days))),
-            "test_sieerror": SIEError(leadtimes_to_evaluate=list(range(self.model.n_forecast_days))),
-        }
+        val_metrics = {}
+        test_metrics = {}
 
-        # Metrics across each leadtime
-        if enable_leadtime_metrics:
-            for i in range(self.model.n_forecast_days):
-                val_metrics[f"val_accuracy_{i}"] = IceNetAccuracy(leadtimes_to_evaluate=[i])
-                val_metrics[f"val_sieerror_{i}"] = SIEError(leadtimes_to_evaluate=[i])
+        for metric in metrics:
+            metric_name = metric.__name__.lower()
 
-                test_metrics[f"test_accuracy_{i}"] = IceNetAccuracy(leadtimes_to_evaluate=[i])
-                test_metrics[f"test_sieerror_{i}"] = SIEError(leadtimes_to_evaluate=[i])
+            # Overall metrics
+            val_metrics.update({
+                f"val_{metric_name}": metric()
+            })
+            test_metrics.update({
+                f"test_{metric_name}": metric()
+            })
+
+            # Metrics across each leadtime
+            if enable_leadtime_metrics:
+                for i in range(self.model.n_forecast_days):
+                    val_metrics.update({
+                        f"val_{metric_name}_{i}": metric(leadtimes_to_evaluate=[i])
+                    })
+                    test_metrics.update({
+                        f"test_{metric_name}_{i}": metric(leadtimes_to_evaluate=[i])
+                    })
 
         self.val_metrics = MetricCollection(val_metrics)
         self.test_metrics = MetricCollection(test_metrics)
@@ -144,7 +147,9 @@ class LitUNet(pl.LightningModule):
         val_metrics = self.val_metrics.compute()
         self.log_dict(val_metrics, on_step=False, on_epoch=True, prog_bar=True, sync_dist=True)  # epoch-level metrics
 
-        self.metrics_history["val_accuracy"].append(val_metrics["val_accuracy"].item())
+        for metric in val_metrics:
+            self.metrics_history[metric].append(val_metrics[metric].item())
+
         self.val_metrics.reset()
 
 

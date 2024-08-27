@@ -45,14 +45,6 @@ class TrainingArgParser(argparse.ArgumentParser):
                           action="store_true",
                           help="Shuffle the training set")
         self.add_argument("--lr", default=1e-4, type=float)
-        # self.add_argument("--lr_10e_decay_fac",
-        #                   default=1.0,
-        #                   type=float,
-        #                   help="Factor by which LR is multiplied by every 10 epochs "
-        #                   "using exponential decay. E.g. 1 -> no decay (default)"
-        #                   ", 0.5 -> halve every 10 epochs.")
-        # self.add_argument('--lr_decay_start', default=10, type=int)
-        # self.add_argument('--lr_decay_end', default=30, type=int)
 
     def add_unet(self):
         self.add_argument("-f", "--filter-size", type=int, default=3)

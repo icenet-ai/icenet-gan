@@ -58,6 +58,8 @@ class WeightedL1Loss(nn.L1Loss):
 
 class WeightedMSELoss(nn.MSELoss):
     def __init__(self, *args, **kwargs):
+        if "reduction" not in kwargs:
+            kwargs.update({"reduction": "none"})
         super().__init__(*args, **kwargs)
 
     def forward(self, inputs, targets, sample_weights):
@@ -65,7 +67,7 @@ class WeightedMSELoss(nn.MSELoss):
         Weighted MSE loss.
 
         Compute MSE loss weighted by masking.
-        
+
         """
         y_hat = torch.sigmoid(inputs)
 
@@ -75,7 +77,6 @@ class WeightedMSELoss(nn.MSELoss):
                             (100*y_hat.movedim(-2, 1)), 
                             (100*targets.movedim(-1, 1))
                          )*sample_weights.movedim(-1, 1)
-
 
         # Computing here, in the nn.Module derived class
         # loss = (
