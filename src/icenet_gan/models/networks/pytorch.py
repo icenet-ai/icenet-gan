@@ -5,7 +5,6 @@ import os
 import lightning.pytorch as pl
 import pandas as pd
 import torch
-import torch.utils.data as data
 
 
 from icenet.model.networks.base import BaseNetwork
@@ -69,6 +68,7 @@ class PytorchNetwork(BaseNetwork):
         lit_module = model_creator(**model_creator_kwargs)
         logger = CSVLogger("logs", name=logger_name)
 
+        # Print model summary
         print(lit_module.model)
 
         # set up trainer configuration
@@ -86,15 +86,17 @@ class PytorchNetwork(BaseNetwork):
         )
 
         if save:
-            checkpoint_filename = "checkpoint.{}.network_{}.{}.".format(
+            checkpoint_weights_filename = "checkpoint.{}.network_{}.{}.".format(
                     self.run_name, self.dataset.identifier, self.seed) + \
                     "{epoch:03d}"
 
-            checkpoint_callback = ModelCheckpointOnImprovement(monitor=self._checkpoint_monitor,
+            # Save weights each time monitored metric has improved
+            checkpoint_weights_callback = ModelCheckpointOnImprovement(monitor=self._checkpoint_monitor,
                                                 mode=self._checkpoint_mode,
                                                 save_top_k=-1,
                                                 # every_n_epochs=1,
-                                                filename=checkpoint_filename,
+                                                enable_version_counter=False,
+                                                filename=checkpoint_weights_filename,
                                                 # Prevents "epoch=001" in filename output
                                                 auto_insert_metric_name=False,
                                                 # dirpath=self._weights_path,
@@ -102,16 +104,37 @@ class PytorchNetwork(BaseNetwork):
                                                 save_weights_only=True,
                                                 )
 
-            logging.info("Saving model & network to: {}".format(self._weights_path))
-            trainer.callbacks.append(checkpoint_callback)
+            logging.info("Saving network to: {}/{}.ckpt".format(self.network_folder,
+                                                                checkpoint_weights_filename))
+            trainer.callbacks.append(checkpoint_weights_callback)
 
-        # train model
+            checkpoint_model_filename = "{}.model_{}.{}".format(
+                    self.run_name, self.dataset.identifier, self.seed)
+
+            # Save entire model including weights of the best monitored epoch
+            checkpoint_model_callback = ModelCheckpoint(monitor=self._checkpoint_monitor,
+                                                mode=self._checkpoint_mode,
+                                                save_top_k=1,
+                                                # every_n_epochs=1,
+                                                enable_version_counter=False,
+                                                # save_on_train_epoch_end=False,
+                                                filename=checkpoint_model_filename,
+                                                # Prevents "epoch=001" in filename output
+                                                auto_insert_metric_name=False,
+                                                dirpath=self.network_folder,
+                                                save_weights_only=False,
+                                                )
+
+            logging.info("Saving model to: {}".format(checkpoint_model_filename))
+            trainer.callbacks.append(checkpoint_model_callback)
+
         # print(f"Training {len(train_dataset)} examples / {len(train_dataloader)} batches (batch size {batch_size}).")
         # print(f"Validating {len(validation_dataset)} examples / {len(val_dataloader)} batches (batch size {batch_size}).")
         if self._pre_load_path and os.path.exists(self._pre_load_path):
             logging.warning("Automagically loading network weights from {}".format(
                 self._pre_load_path))
 
+        # train model
         trainer.fit(
             lit_module,
             train_dataloader,
@@ -121,7 +144,6 @@ class PytorchNetwork(BaseNetwork):
 
         with open(history_path, 'w') as fh:
             logging.info(f"Saving metrics history to: {history_path}")
-            print(lit_module.metrics_history)
             pd.DataFrame(lit_module.metrics_history).to_json(fh)
 
         # # TODO: consider using .keras format throughout
@@ -142,4 +164,4 @@ class PytorchNetwork(BaseNetwork):
         #     with open(history_path, 'w') as fh:
         #         pd.DataFrame(model_history.history).to_json(fh)
 
-        return trainer, checkpoint_callback
+        return trainer, checkpoint_model_callback
