@@ -2,12 +2,11 @@ import json
 import logging
 import time
 
-import lightning.pytorch as pl
-
-from .cli import TrainingArgParser
+from pathlib import Path
 
 from . import metrics
 from . import losses
+from .cli import TrainingArgParser
 from ..data.data import IceNetDataSetTorch
 from .models import LitUNet, unet_batchnorm
 from .networks.pytorch import PytorchNetwork
@@ -65,7 +64,8 @@ def evaluate_model(trainer: object,
     #     verbose=2
     # )
 
-    results_path = "{}.results.json".format(model_path)
+    output_path = Path(model_path).resolve().with_suffix("")
+    results_path = "{}.results.json".format(output_path)
     logging.info(f"Saving evaluation results to {results_path}")
     with open(results_path, "w") as fh:
         json.dump(results[0], fh)
