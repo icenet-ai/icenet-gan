@@ -159,10 +159,10 @@ def execute_pytorch_training(args, dataset, network,
             # Note, when using CLI, pass the metric method name prepended by 'val_'
             # e.g. `--checkpoint-monitor val_icenetaccuracy`
             metrics=[
-                metrics.IceNetAccuracy,
+                metrics.BinaryAccuracy,
                 metrics.SIEError,
-                metrics.WeightedMAE,
-                metrics.WeightedRMSE,
+                metrics.MAE,
+                metrics.RMSE,
                 # losses.WeightedMSELoss,
             ],
             learning_rate=args.lr,

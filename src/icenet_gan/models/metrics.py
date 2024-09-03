@@ -6,7 +6,7 @@ from torchmetrics.functional.regression.mae import _mean_absolute_error_update
 from torchmetrics.functional.regression.mse import _mean_squared_error_update
 
 
-class IceNetAccuracy(Metric):
+class BinaryAccuracy(Metric):
     """Binary accuracy metric for use at multiple leadtimes.
 
     Reference: https://lightning.ai/docs/torchmetrics/stable/pages/implement.html
@@ -76,7 +76,7 @@ class SIEError(Metric):
         return (self.pred_sie - self.true_sie) * 25**2 # each pixel is 25x25 km
 
 
-class WeightedMAE(torchmetrics.MeanAbsoluteError):
+class MAE(torchmetrics.MeanAbsoluteError):
     """MAE metric for use at multiple leadtimes.
 
     Reference: https://lightning.ai/docs/torchmetrics/stable/pages/implement.html
@@ -105,7 +105,7 @@ class WeightedMAE(torchmetrics.MeanAbsoluteError):
         self.total += num_obs
 
 
-class WeightedRMSE(torchmetrics.MeanSquaredError):
+class RMSE(torchmetrics.MeanSquaredError):
     """RMSE metric for use at multiple leadtimes.
 
     Reference: https://lightning.ai/docs/torchmetrics/stable/pages/implement.html

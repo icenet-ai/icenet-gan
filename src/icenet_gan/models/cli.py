@@ -31,7 +31,7 @@ class TrainingArgParser(argparse.ArgumentParser):
                           type=str)
         self.add_argument("-cm",
                           "--checkpoint-monitor",
-                          default="val_icenetaccuracy",
+                          default="val_binaryaccuracy",
                           type=str)
         self.add_argument("-ds",
                           "--additional-dataset",
