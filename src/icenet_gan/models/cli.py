@@ -22,6 +22,7 @@ class TrainingArgParser(argparse.ArgumentParser):
                           "--verbose",
                           action="store_true",
                           default=False)
+        self.add_argument("-w", "--workers", default=8, type=int)
 
         self.add_argument("-b", "--batch-size", type=int, default=4)
         self.add_argument("-ca",
