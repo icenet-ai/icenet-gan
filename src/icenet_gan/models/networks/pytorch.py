@@ -6,12 +6,15 @@ import lightning.pytorch as pl
 import pandas as pd
 import torch
 
-
 from icenet.model.networks.base import BaseNetwork
-from lightning.pytorch.callbacks import ModelCheckpoint
+from lightning.pytorch.callbacks import (ModelCheckpoint,
+                                         RichProgressBar,
+                                         TQDMProgressBar
+                                         )
 from lightning.pytorch.loggers import CSVLogger
 
 from ...lightning.checkpoints import ModelCheckpointOnImprovement
+
 
 class PytorchNetwork(BaseNetwork):
     def __init__(self,
@@ -78,8 +81,14 @@ class PytorchNetwork(BaseNetwork):
             log_every_n_steps=5,
             max_epochs=epochs,
             num_sanity_val_steps=0,
-            enable_checkpointing=False,
+            enable_checkpointing=False, # Disable built-in checkpointing, using callback instead
             logger=logger,
+            deterministic=True,
+            # enable_progress_bar=False,
+            callbacks=[
+                # RichProgressBar(leave=True),
+                # TQDMProgressBar(leave=True),
+                ],
             fast_dev_run=False, # Runs single batch through train and validation
                                 #    when running trainer.test()
                                 # Note: Cannot use with automatic best checkpointing
@@ -90,7 +99,7 @@ class PytorchNetwork(BaseNetwork):
                     self.run_name, self.dataset.identifier, self.seed) + \
                     "{epoch:03d}"
 
-            # Save weights each time monitored metric has improved
+            # Save weights each time monitored metric has improved (creates new file each time)
             checkpoint_weights_callback = ModelCheckpointOnImprovement(monitor=self._checkpoint_monitor,
                                                 mode=self._checkpoint_mode,
                                                 save_top_k=-1,
@@ -111,7 +120,7 @@ class PytorchNetwork(BaseNetwork):
             checkpoint_model_filename = "{}.model_{}.{}".format(
                     self.run_name, self.dataset.identifier, self.seed)
 
-            # Save entire model including weights of the best monitored epoch
+            # Save entire model including weights of the best monitored epoch (overwrites previous best)
             checkpoint_model_callback = ModelCheckpoint(monitor=self._checkpoint_monitor,
                                                 mode=self._checkpoint_mode,
                                                 save_top_k=1,
