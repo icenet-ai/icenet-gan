@@ -2,6 +2,9 @@ import json
 import logging
 import time
 
+import torch
+import torch.multiprocessing as mp
+
 from pathlib import Path
 
 from . import metrics
@@ -55,7 +58,8 @@ def evaluate_model(trainer: object,
     # disable randomness, dropout, etc...
     best_model.eval()
 
-    results = trainer.test(best_model, dataloaders=eval_data)
+    with torch.no_grad():
+        results = trainer.test(best_model, dataloaders=eval_data)
     print(results)
 
     # results = network.evaluate(
@@ -103,6 +107,7 @@ def get_datasets_torch(args):
 
 
 def pytorch_main():
+    # mp.set_start_method("spawn")
     args = TrainingArgParser().add_unet().parse_args()
     dataset = get_datasets_torch(args)
     network = PytorchNetwork(dataset,
@@ -156,6 +161,8 @@ def execute_pytorch_training(args, dataset, network,
             metrics=[
                 metrics.IceNetAccuracy,
                 metrics.SIEError,
+                metrics.WeightedMAE,
+                metrics.WeightedRMSE,
                 # losses.WeightedMSELoss,
             ],
             learning_rate=args.lr,
@@ -181,3 +188,7 @@ def execute_pytorch_training(args, dataset, network,
 
     #     if using_wandb:
     #         finalise_wandb(run, results, metric_names, leads)
+
+if __name__ == "__main__":
+    # mp.set_start_method("spawn")
+    pytorch_main()
