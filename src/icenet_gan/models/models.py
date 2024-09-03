@@ -177,7 +177,7 @@ def unet_batchnorm(input_shape: object,
         criterion=loss,
         learning_rate=learning_rate,
         metrics=metrics,
-        enable_leadtime_metrics=True,
+        enable_leadtime_metrics=False,
     )
 
     return lit_module
