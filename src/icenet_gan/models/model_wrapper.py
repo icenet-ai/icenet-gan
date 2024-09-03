@@ -8,10 +8,7 @@ from lightning.pytorch.utilities.types import TRAIN_DATALOADERS
 from torchmetrics import MetricCollection
 
 
-class LitUNet(pl.LightningModule):
-    """
-    A LightningModule wrapping the UNet implementation of IceNet.
-    """
+class BaseLightningModule(pl.LightningModule):
     def __init__(self,
                  model: nn.Module,
                  criterion: callable,
@@ -19,6 +16,30 @@ class LitUNet(pl.LightningModule):
                  metrics: object,
                  enable_leadtime_metrics: bool = True,
                  ):
+        super().__init__()
+        # Save input parameters to __init__ (hyperparams) when checkpointing.
+        # self.save_hyperparameters(ignore=["model", "criterion"])
+        self.save_hyperparameters()
+
+        self.model = model
+        self.criterion = criterion
+        self.learning_rate = learning_rate
+        self.metrics = metrics
+        self.enable_leadtime_metrics = enable_leadtime_metrics
+        self.n_output_classes = model.n_output_classes  # this should be a property of the network
+
+    def on_save_checkpoint(self, checkpoint):
+        # Add name of class and path to the lightning module to checkpoint
+        # TODO: Add code version/git commit tag to it as well
+        checkpoint["lightning_module_name"] = self.__class__.__name__
+        checkpoint["lightning_module_path"] = self.__module__
+
+
+class LitUNet(BaseLightningModule):
+    """
+    A LightningModule wrapping the UNet implementation of IceNet.
+    """
+    def __init__(self, *args, **kwargs):
         """
         Construct a UNet LightningModule.
         Note that we keep hyperparameters separate from dataloaders to prevent data leakage at test time.
@@ -26,22 +47,21 @@ class LitUNet(pl.LightningModule):
         :param criterion: PyTorch loss function for training instantiated with reduction="none"
         :param learning_rate: Float learning rate for our optimiser
         """
-        super().__init__()
-        self.model = model
-        self.criterion = criterion
-        self.learning_rate = learning_rate
-        self.metrics = metrics
-        self.n_output_classes = model.n_output_classes  # this should be a property of the network
+        super().__init__(*args, **kwargs)
 
         self.metrics_history = defaultdict(list)
 
+        train_metrics = {}
         val_metrics = {}
         test_metrics = {}
 
-        for metric in metrics:
+        for metric in self.metrics:
             metric_name = metric.__name__.lower()
 
             # Overall metrics
+            train_metrics.update({
+                f"train_{metric_name}": metric()
+            })
             val_metrics.update({
                 f"val_{metric_name}": metric()
             })
@@ -50,7 +70,7 @@ class LitUNet(pl.LightningModule):
             })
 
             # Metrics across each leadtime
-            if enable_leadtime_metrics:
+            if self.enable_leadtime_metrics:
                 for i in range(self.model.n_forecast_days):
                     val_metrics.update({
                         f"val_{metric_name}_{i}": metric(leadtimes_to_evaluate=[i])
@@ -59,12 +79,9 @@ class LitUNet(pl.LightningModule):
                         f"test_{metric_name}_{i}": metric(leadtimes_to_evaluate=[i])
                     })
 
+        self.train_metrics = MetricCollection(train_metrics)
         self.val_metrics = MetricCollection(val_metrics)
         self.test_metrics = MetricCollection(test_metrics)
-
-        # Save input parameters to __init__ (hyperparams) when checkpointing.
-        # self.save_hyperparameters(ignore=["model", "criterion"])
-        self.save_hyperparameters()
 
 
     def forward(self, x):
@@ -87,13 +104,18 @@ class LitUNet(pl.LightningModule):
         """
         x, y, sample_weight = batch
         outputs = self.model(x)
-        # y_hat = torch.sigmoid(outputs)
 
         loss = self.criterion(outputs, y, sample_weight)
 
         # This logged result can be accessed later via `self.trainer.callback_metrics("train_loss")`
         # Reference: https://github.com/Lightning-AI/pytorch-lightning/issues/13147#issuecomment-1138975446
-        self.log("train_loss", loss, on_step=False, on_epoch=True, prog_bar=True, sync_dist=False)
+        self.log("train_loss", loss, on_step=True, on_epoch=True, prog_bar=True, sync_dist=True)
+
+        # Compute metrics
+        y_hat = torch.sigmoid(outputs)
+        self.train_metrics(y_hat.squeeze(dim=-2), y.squeeze(dim=-1), sample_weight.squeeze(dim=-1))
+        self.log_dict(self.train_metrics, on_step=True, on_epoch=False, prog_bar=True, sync_dist=True)
+
         return {"loss": loss}
 
 
@@ -109,7 +131,8 @@ class LitUNet(pl.LightningModule):
 
         self.val_metrics.update(y_hat.squeeze(dim=-2), y.squeeze(dim=-1), sample_weight.squeeze(dim=-1))
 
-        self.log("val_loss", loss, on_step=False, on_epoch=True, prog_bar=True, sync_dist=True)  # epoch-level loss
+        self.log("val_loss", loss, on_step=True, on_epoch=True, prog_bar=True, sync_dist=True)  # epoch-level loss
+        self.log_dict(self.val_metrics, on_step=True, on_epoch=True, prog_bar=True, sync_dist=True)  # epoch-level metrics
         return {"val_loss", loss}
 
 
@@ -135,6 +158,9 @@ class LitUNet(pl.LightningModule):
         avg_train_loss = self.trainer.callback_metrics["train_loss"]
         self.metrics_history["train_loss"].append(avg_train_loss.item())
 
+        # Reset metrics computed in each training step
+        self.train_metrics.reset()
+
 
     def on_validation_epoch_end(self):
         """
@@ -145,7 +171,7 @@ class LitUNet(pl.LightningModule):
         self.metrics_history["val_loss"].append(avg_val_loss.item())
 
         val_metrics = self.val_metrics.compute()
-        self.log_dict(val_metrics, on_step=False, on_epoch=True, prog_bar=True, sync_dist=True)  # epoch-level metrics
+        # self.log_dict(val_metrics, on_step=False, on_epoch=True, prog_bar=False, sync_dist=True)  # epoch-level metrics
 
         for metric in val_metrics:
             self.metrics_history[metric].append(val_metrics[metric].item())
@@ -175,5 +201,3 @@ class LitUNet(pl.LightningModule):
         return {
             "optimizer": optimizer
         }
-
-
