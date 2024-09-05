@@ -10,7 +10,6 @@ import tensorflow as tf
 import torch
 
 from icenet.data.loader import save_sample
-# from icenet.data.dataset import IceNetDataSet
 from .cli import predict_args
 from ..data.data import IceNetDataSetTorch
 from .model_wrapper import BaseLightningModule, LitUNet
@@ -66,34 +65,64 @@ def predict_forecast(
     lightning_module = load_module(lightning_module_path, lightning_module_name, lightning_module_args).eval()
 
     lightning_module.load_state_dict(checkpoint["state_dict"])
+    lightning_module.eval()
     # lightning_module.load_from_checkpoint(model_path)
 
-    _, _, test_inputs = ds.get_data_loaders(ratio=1.0)
+    if not test_set:
+        logging.info("Generating forecast inputs from processed/ files")
+        for date in start_dates:
+            data_sample = dl.generate_sample(date, prediction=True)
 
-    trainer = pl.Trainer()
-    predictions = trainer.predict(lightning_module, dataloaders=test_inputs)
+            if os.path.exists(output_folder):
+                logging.warning("{} output already exists".format(output_folder))
+            os.makedirs(output_folder, exist_ok=output_folder)
 
-    source_key = [k for k in dl.config['sources'].keys() if k != "meta"][0]
-    test_dates = [
-            dt.date(*[int(v)
-                      for v in d.split("_")])
-            for d in dl.config["sources"][source_key]["dates"]["test"]
-        ]
+            dsample = torch.tensor(data_sample[0]).unsqueeze(dim=0)
+            with torch.no_grad():
+                outputs = lightning_module(dsample).unsqueeze(dim=0)
+                predictions = torch.sigmoid(outputs)
 
-    if os.path.exists(output_folder):
-        logging.warning("{} output already exists".format(output_folder))
-    os.makedirs(output_folder, exist_ok=output_folder)
+            idx = 0
+            for workers, prediction in enumerate(predictions):
+                for batch in range(prediction.shape[0]):
+                    output_path = os.path.join(output_folder, date.strftime("%Y_%m_%d.npy"))
+                    forecast = prediction[batch, :, :, :, :].movedim(-2, 0)
+                    forecast_np = forecast.detach().cpu().numpy()
+                    np.save(output_path, forecast_np)
+                    idx += 1
+    else:
+        logging.info("Using forecast inputs from network_dataset/ files")
 
-    idx = 0
-    for workers, prediction in enumerate(predictions):
-        for batch in range(prediction.shape[0]):
-            print(test_dates)
-            date = test_dates[idx]
-            output_path = os.path.join(output_folder, date.strftime("%Y_%m_%d.npy"))
-            forecast = prediction[batch, :, :, :, :].movedim(-2, 0)
-            forecast_np = forecast.detach().cpu().numpy()
-            np.save(output_path, forecast_np)
-            idx += 1
+        _, _, test_inputs = ds.get_data_loaders(ratio=1.0)
+        itval = iter(test_inputs)
+        nxt = next(itval)
+        print(nxt[0].shape)
+
+        trainer = pl.Trainer()
+        with torch.no_grad():
+            predictions = trainer.predict(lightning_module, dataloaders=test_inputs)
+
+        source_key = [k for k in dl.config['sources'].keys() if k != "meta"][0]
+
+        test_dates = [
+                dt.date(*[int(v)
+                        for v in d.split("_")])
+                for d in dl.config["sources"][source_key]["dates"]["test"]
+            ]
+
+        if os.path.exists(output_folder):
+            logging.warning("{} output already exists".format(output_folder))
+        os.makedirs(output_folder, exist_ok=output_folder)
+
+        idx = 0
+        for workers, prediction in enumerate(predictions):
+            for batch in range(prediction.shape[0]):
+                date = test_dates[idx]
+                output_path = os.path.join(output_folder, date.strftime("%Y_%m_%d.npy"))
+                forecast = prediction[batch, :, :, :, :].movedim(-2, 0)
+                forecast_np = forecast.detach().cpu().numpy()
+                np.save(output_path, forecast_np)
+                idx += 1
 
 
 def run_prediction(network, date, output_folder, data_sample, save_args):
