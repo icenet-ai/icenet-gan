@@ -112,7 +112,7 @@ class LitUNet(BaseLightningModule):
         self.log("loss", loss, on_step=True, on_epoch=True, prog_bar=True, sync_dist=True)
 
         # Compute metrics
-        y_hat = torch.sigmoid(outputs)
+        y_hat = outputs
         self.train_metrics(y_hat.squeeze(dim=-2), y.squeeze(dim=-1), sample_weight.squeeze(dim=-1))
         self.log_dict(self.train_metrics, on_step=True, on_epoch=True, prog_bar=True, sync_dist=True)
 
@@ -125,21 +125,21 @@ class LitUNet(BaseLightningModule):
         outputs = self.model(x)
 
         # y_hat: (b, h, w, classes, n_forecast_days)
-        y_hat = torch.sigmoid(outputs)
+        y_hat = outputs
 
         loss = self.criterion(outputs, y, sample_weight)
 
         self.val_metrics.update(y_hat.squeeze(dim=-2), y.squeeze(dim=-1), sample_weight.squeeze(dim=-1))
 
         self.log("val_loss", loss, on_step=True, on_epoch=True, prog_bar=True, sync_dist=True)  # epoch-level loss
-        self.log_dict(self.val_metrics, on_step=True, on_epoch=True, prog_bar=True, sync_dist=True)  # epoch-level metrics
+        self.log_dict(self.val_metrics, on_step=False, on_epoch=True, prog_bar=True, sync_dist=True)  # epoch-level metrics
         return {"val_loss", loss}
 
 
     def test_step(self, batch):
         x, y, sample_weight = batch
         outputs = self.model(x)
-        y_hat = torch.sigmoid(outputs)
+        y_hat = outputs
 
         loss = self.criterion(outputs, y, sample_weight)
 
@@ -191,7 +191,7 @@ class LitUNet(BaseLightningModule):
         :return: Predictions for given input.
         """
         x, y, sample_weight = batch
-        y_hat = torch.sigmoid(self.model(x))
+        y_hat = self.model(x)
 
         return y_hat
 

@@ -79,8 +79,7 @@ def predict_forecast(
 
             dsample = torch.tensor(data_sample[0]).unsqueeze(dim=0)
             with torch.no_grad():
-                outputs = lightning_module(dsample).unsqueeze(dim=0)
-                predictions = torch.sigmoid(outputs)
+                predictions = lightning_module(dsample).unsqueeze(dim=0)
 
             idx = 0
             for workers, prediction in enumerate(predictions):

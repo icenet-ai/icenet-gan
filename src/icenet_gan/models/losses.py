@@ -1,24 +1,23 @@
-import torch
 import torch.nn as nn
 
 
-class WeightedBCEWithLogitsLoss(nn.BCEWithLogitsLoss):
+class BCELoss(nn.BCELoss):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
     def forward(self, inputs, targets, sample_weights):
         """
-        Weighted BCEWithLogitsLoss loss.
+        Weighted BCELoss loss.
 
-        Compute BCEWithLogitsLoss loss weighted by masking.
+        Compute BCELoss loss weighted by masking.
 
-        Using BCEWithLogitsLoss instead of BCELoss, as pytorch docs mentions it is
+        Using BCELoss instead of BCELoss, as pytorch docs mentions it is
         more numerically stable.
-        https://pytorch.org/docs/stable/generated/torch.nn.BCEWithLogitsLoss.html
+        https://pytorch.org/docs/stable/generated/torch.nn.BCELoss.html
         
         """
-        # Computing using nn.BCEWithLogitsLoss base class. This class must be instantiated via:
-        # >>> criterion = WeightedBCEWithLogitsLoss(reduction='none')
+        # Computing using nn.BCELoss base class. This class must be instantiated via:
+        # >>> criterion = BCELoss(reduction='none')
         loss = super().forward(
                             (inputs.movedim(-2, 1)),
                             (targets.movedim(-1, 1))
@@ -27,7 +26,7 @@ class WeightedBCEWithLogitsLoss(nn.BCEWithLogitsLoss):
         return loss.mean()
 
 
-class WeightedL1Loss(nn.L1Loss):
+class L1Loss(nn.L1Loss):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
@@ -38,7 +37,7 @@ class WeightedL1Loss(nn.L1Loss):
         Compute L1 loss weighted by masking.
         
         """
-        y_hat = torch.sigmoid(inputs)
+        y_hat = inputs
 
         # Computing using nn.L1Loss class. This class must be instantiated via:
         # >>> criterion = WeightedL1Loss(reduction="none")
@@ -56,7 +55,7 @@ class WeightedL1Loss(nn.L1Loss):
         return loss.mean()
 
 
-class WeightedMSELoss(nn.MSELoss):
+class MSELoss(nn.MSELoss):
     def __init__(self, *args, **kwargs):
         if "reduction" not in kwargs:
             kwargs.update({"reduction": "none"})
@@ -69,7 +68,7 @@ class WeightedMSELoss(nn.MSELoss):
         Compute MSE loss weighted by masking.
 
         """
-        y_hat = torch.sigmoid(inputs)
+        y_hat = inputs
 
         # Computing using nn.MSELoss base class. This class must be instantiated via:
         # criterion = nn.MSELoss(reduction="none")

@@ -155,7 +155,7 @@ def execute_pytorch_training(args, dataset, network,
         train_dataloader,
         model_creator_kwargs=dict(
             input_shape=input_shape,
-            loss=losses.WeightedMSELoss(),
+            loss=losses.MSELoss(),
             # Note, when using CLI, pass the metric method name prepended by 'val_'
             # e.g. `--checkpoint-monitor val_icenetaccuracy`
             metrics=[
@@ -163,7 +163,7 @@ def execute_pytorch_training(args, dataset, network,
                 metrics.SIEError,
                 metrics.MAE,
                 metrics.RMSE,
-                # losses.WeightedMSELoss,
+                # losses.MSELoss,
             ],
             learning_rate=args.lr,
             filter_size=args.filter_size,

@@ -99,15 +99,18 @@ class UNet(nn.Module):
         # Final layer
         output = self.final_layer(up9)
 
-        # transpose from shape (b, c, h, w) back to (b, h, w, c) to align with training data
-        output = torch.movedim(output, 1, -1)  # move c from second to final dim
+        # Convert raw logits to result
+        y_hat = torch.sigmoid(output)
 
-        b, h, w, c = output.shape
+        # transpose from shape (b, c, h, w) back to (b, h, w, c) to align with training data
+        y_hat = torch.movedim(y_hat, 1, -1)  # move c from second to final dim
+
+        b, h, w, c = y_hat.shape
 
         # unpack c=classes*months dimension into classes, months as separate dimensions
-        output = output.reshape((b, h, w, self.n_output_classes, self.n_forecast_days))
+        y_hat = y_hat.reshape((b, h, w, self.n_output_classes, self.n_forecast_days))
 
-        return output
+        return y_hat
 
 
     def conv_block(self, in_channels, out_channels, final=False):
@@ -167,9 +170,9 @@ def unet_batchnorm(input_shape: object,
         legacy_rounding=legacy_rounding,
     )
 
-    # criterion = WeightedBCEWithLogitsLoss(reduction="none")
-    # criterion = WeightedL1Loss(reduction="none")
-    # criterion = WeightedMSELoss(reduction="none")
+    # criterion = BCELoss(reduction="none")
+    # criterion = L1Loss(reduction="none")
+    # criterion = MSELoss(reduction="none")
 
     # configure PyTorch Lightning module
     lit_module = LitUNet(
