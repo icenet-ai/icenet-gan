@@ -73,29 +73,23 @@ def predict_forecast(
         for date in start_dates:
             data_sample = dl.generate_sample(date, prediction=True)
 
-            if os.path.exists(output_folder):
-                logging.warning("{} output already exists".format(output_folder))
-            os.makedirs(output_folder, exist_ok=output_folder)
+            input_sample = torch.tensor(data_sample[0]).unsqueeze(dim=0)
 
-            dsample = torch.tensor(data_sample[0]).unsqueeze(dim=0)
+            logging.info("Running prediction {}".format(date))
             with torch.no_grad():
-                predictions = lightning_module(dsample).unsqueeze(dim=0)
+                predictions = lightning_module(input_sample).unsqueeze(dim=0)
 
-            idx = 0
-            for workers, prediction in enumerate(predictions):
-                for batch in range(prediction.shape[0]):
-                    output_path = os.path.join(output_folder, date.strftime("%Y_%m_%d.npy"))
-                    forecast = prediction[batch, :, :, :, :].movedim(-2, 0)
-                    forecast_np = forecast.detach().cpu().numpy()
-                    np.save(output_path, forecast_np)
-                    idx += 1
+            save_prediction(predictions=predictions,
+                                    dates=[date],
+                                    output_folder=output_folder,
+                                    )
     else:
         logging.info("Using forecast inputs from network_dataset/ files")
 
         _, _, test_inputs = ds.get_data_loaders(ratio=1.0)
-        itval = iter(test_inputs)
-        nxt = next(itval)
-        print(nxt[0].shape)
+        # itval = iter(test_inputs)
+        # nxt = next(itval)
+        # print(nxt[0].shape)
 
         trainer = pl.Trainer()
         with torch.no_grad():
@@ -109,38 +103,28 @@ def predict_forecast(
                 for d in dl.config["sources"][source_key]["dates"]["test"]
             ]
 
-        if os.path.exists(output_folder):
-            logging.warning("{} output already exists".format(output_folder))
-        os.makedirs(output_folder, exist_ok=output_folder)
-
-        idx = 0
-        for workers, prediction in enumerate(predictions):
-            for batch in range(prediction.shape[0]):
-                date = test_dates[idx]
-                output_path = os.path.join(output_folder, date.strftime("%Y_%m_%d.npy"))
-                forecast = prediction[batch, :, :, :, :].movedim(-2, 0)
-                forecast_np = forecast.detach().cpu().numpy()
-                np.save(output_path, forecast_np)
-                idx += 1
+        save_prediction(predictions=predictions,
+                        dates=test_dates,
+                        output_folder=output_folder,
+                        )
 
 
-def run_prediction(network, date, output_folder, data_sample, save_args):
-    net_input, net_output, sample_weights = data_sample
-
-    logging.info("Running prediction {}".format(date))
-    pred = network(tf.convert_to_tensor([net_input]), training=False)
+def save_prediction(predictions, dates, output_folder):
 
     if os.path.exists(output_folder):
         logging.warning("{} output already exists".format(output_folder))
     os.makedirs(output_folder, exist_ok=output_folder)
-    output_path = os.path.join(output_folder, date.strftime("%Y_%m_%d.npy"))
 
-    logging.info("Saving {} - forecast output {}".format(date, pred.shape))
-    np.save(output_path, pred)
-
-    if save_args:
-        logging.debug("Saving loader generated data for reference...")
-        save_sample(os.path.join(output_path, "loader"), date, data_sample)
+    idx = 0
+    for workers, prediction in enumerate(predictions):
+        for batch in range(prediction.shape[0]):
+            date = dates[idx]
+            logging.info("Saving {} - forecast output {}".format(date, prediction.shape))
+            output_path = os.path.join(output_folder, date.strftime("%Y_%m_%d.npy"))
+            forecast = prediction[batch, :, :, :, :].movedim(-2, 0)
+            forecast_np = forecast.detach().cpu().numpy()
+            np.save(output_path, forecast_np)
+            idx += 1
 
     return output_path
 
