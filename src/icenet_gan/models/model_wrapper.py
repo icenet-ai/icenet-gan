@@ -60,7 +60,7 @@ class LitUNet(BaseLightningModule):
 
             # Overall metrics
             train_metrics.update({
-                f"train_{metric_name}": metric()
+                f"{metric_name}": metric()
             })
             val_metrics.update({
                 f"val_{metric_name}": metric()
@@ -107,14 +107,14 @@ class LitUNet(BaseLightningModule):
 
         loss = self.criterion(outputs, y, sample_weight)
 
-        # This logged result can be accessed later via `self.trainer.callback_metrics("train_loss")`
+        # This logged result can be accessed later via `self.trainer.callback_metrics("loss")`
         # Reference: https://github.com/Lightning-AI/pytorch-lightning/issues/13147#issuecomment-1138975446
-        self.log("train_loss", loss, on_step=True, on_epoch=True, prog_bar=True, sync_dist=True)
+        self.log("loss", loss, on_step=True, on_epoch=True, prog_bar=True, sync_dist=True)
 
         # Compute metrics
         y_hat = torch.sigmoid(outputs)
         self.train_metrics(y_hat.squeeze(dim=-2), y.squeeze(dim=-1), sample_weight.squeeze(dim=-1))
-        self.log_dict(self.train_metrics, on_step=True, on_epoch=False, prog_bar=True, sync_dist=True)
+        self.log_dict(self.train_metrics, on_step=True, on_epoch=True, prog_bar=True, sync_dist=True)
 
         return {"loss": loss}
 
@@ -155,8 +155,8 @@ class LitUNet(BaseLightningModule):
         https://github.com/Lightning-AI/pytorch-lightning/pull/16520
         """
         # Reference: https://github.com/Lightning-AI/pytorch-lightning/issues/13147#issuecomment-1138975446
-        avg_train_loss = self.trainer.callback_metrics["train_loss"]
-        self.metrics_history["train_loss"].append(avg_train_loss.item())
+        avg_train_loss = self.trainer.callback_metrics["loss"]
+        self.metrics_history["loss"].append(avg_train_loss.item())
 
         # Reset metrics computed in each training step
         self.train_metrics.reset()
