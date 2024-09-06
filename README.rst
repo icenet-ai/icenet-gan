@@ -1,5 +1,5 @@
 ==========
-icenet-gan
+icenet_gan
 ==========
 
 
@@ -9,19 +9,10 @@ icenet-gan
 .. image:: https://img.shields.io/travis/bnubald/icenet_gan.svg
         :target: https://travis-ci.com/bnubald/icenet_gan
 
-.. image:: https://readthedocs.org/projects/icenet-gan/badge/?version=latest
-        :target: https://icenet-gan.readthedocs.io/en/latest/?version=latest
-        :alt: Documentation Status
-
-
-
-
-Reference implementation of Generative Advesarial Network using PyTorch for IceNet library and ecosystem.
-
+Reference implementation of UNET using PyTorch for IceNet library and ecosystem.
 
 * Free software: MIT license
-* Documentation: https://icenet-gan.readthedocs.io.
-
+* Documentation: TODO.
 
 Features
 --------
@@ -30,6 +21,9 @@ Features
 
 Credits
 -------
+
+This is a refactor of the icenet-gan UNET + GAN implementation by Andrew McDonald for integration into the icenet-pipeline.
+.. _`ampersandmcd/icenet-gan`: https://github.com/ampersandmcd/icenet-gan
 
 This package was created with Cookiecutter_ and the `audreyr/cookiecutter-pypackage`_ project template.
 
